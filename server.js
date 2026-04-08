@@ -1,15 +1,9 @@
-const express = require("express");
-const MidiWriter = require("midi-writer-js");
-const cors = require("cors");
-const fs = require("fs");
+function humanize(value, amount) {
+  return value + (Math.random() * amount - amount / 2);
+}
 
-const app = express();
-app.use(cors());
-app.use(express.json());
-
-// CREATE MIDI ENDPOINT
 app.post("/generate-midi", (req, res) => {
-  const { bpm, files } = req.body;
+  const { bpm, files, swing = 0.1, velocityVar = 10 } = req.body;
   let output = {};
 
   for (let name in files) {
@@ -17,11 +11,14 @@ app.post("/generate-midi", (req, res) => {
     track.setTempo(bpm);
 
     files[name].forEach(n => {
+      let start = humanize(n.start, swing);
+      let velocity = Math.max(30, Math.min(127, n.velocity + Math.floor(Math.random() * velocityVar - velocityVar/2)));
+
       track.addEvent(new MidiWriter.NoteEvent({
         pitch: [n.note],
         duration: "T" + Math.floor(n.duration * 128),
-        startTick: Math.floor(n.start * 128),
-        velocity: n.velocity
+        startTick: Math.floor(start * 128),
+        velocity: velocity
       }));
     });
 
@@ -34,16 +31,4 @@ app.post("/generate-midi", (req, res) => {
   }
 
   res.json(output);
-});
-
-// SERVE MIDI FILES
-app.use("/midis", express.static("midis"));
-
-// PORT + URL CONFIG
-const PORT = process.env.PORT || 3000;
-const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
-
-// START SERVER
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
 });

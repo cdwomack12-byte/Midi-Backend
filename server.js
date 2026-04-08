@@ -1,34 +1,86 @@
+const express = require("express");
+const fs = require("fs");
+const path = require("path");
+const MidiWriter = require("midi-writer-js");
+
+const app = express();
+app.use(express.json());
+
+const PORT = process.env.PORT || 3000;
+const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
+
+// Ensure midis folder exists
+const midiDir = path.join(__dirname, "midis");
+if (!fs.existsSync(midiDir)) {
+  fs.mkdirSync(midiDir);
+}
+
+// Serve MIDI files
+app.use("/midis", express.static(midiDir));
+
+// Humanize timing
 function humanize(value, amount) {
   return value + (Math.random() * amount - amount / 2);
 }
 
+// Generate MIDI
 app.post("/generate-midi", (req, res) => {
-  const { bpm, files, swing = 0.1, velocityVar = 10 } = req.body;
-  let output = {};
+  try {
+    const { bpm = 120, files, swing = 0.1, velocityVar = 10 } = req.body;
 
-  for (let name in files) {
-    let track = new MidiWriter.Track();
-    track.setTempo(bpm);
+    if (!files) {
+      return res.status(400).json({ error: "Missing files data" });
+    }
 
-    files[name].forEach(n => {
-      let start = humanize(n.start, swing);
-      let velocity = Math.max(30, Math.min(127, n.velocity + Math.floor(Math.random() * velocityVar - velocityVar/2)));
+    let output = {};
 
-      track.addEvent(new MidiWriter.NoteEvent({
-        pitch: [n.note],
-        duration: "T" + Math.floor(n.duration * 128),
-        startTick: Math.floor(start * 128),
-        velocity: velocity
-      }));
-    });
+    for (let name in files) {
+      let track = new MidiWriter.Track();
+      track.setTempo(bpm);
 
-    let writer = new MidiWriter.Writer(track);
-    let fileName = `${name}.mid`;
+      files[name].forEach(n => {
+        let start = humanize(n.start, swing);
 
-    fs.writeFileSync(`./midis/${fileName}`, writer.buildFile());
+        let velocity = Math.max(
+          30,
+          Math.min(
+            127,
+            n.velocity + Math.floor(Math.random() * velocityVar - velocityVar / 2)
+          )
+        );
 
-    output[name] = `${BASE_URL}/midis/${fileName}`;
+        track.addEvent(
+          new MidiWriter.NoteEvent({
+            pitch: [n.note],
+            duration: "T" + Math.floor(n.duration * 128),
+            startTick: Math.floor(start * 128),
+            velocity: velocity
+          })
+        );
+      });
+
+      let writer = new MidiWriter.Writer(track);
+      let fileName = `${name}.mid`;
+      let filePath = path.join(midiDir, fileName);
+
+      fs.writeFileSync(filePath, writer.buildFile());
+
+      output[name] = `${BASE_URL}/midis/${fileName}`;
+    }
+
+    res.json(output);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "MIDI generation failed" });
   }
+});
 
-  res.json(output);
+// Health check
+app.get("/", (req, res) => {
+  res.send("MIDI Backend Running");
+});
+
+// Start server
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 });

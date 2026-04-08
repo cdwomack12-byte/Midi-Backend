@@ -15,7 +15,7 @@ if (!fs.existsSync(midiDir)) {
   fs.mkdirSync(midiDir);
 }
 
-// Serve MIDI files (direct access)
+// Serve MIDI files (direct access if needed)
 app.use("/midis", express.static(midiDir));
 
 // Force download endpoint
@@ -29,7 +29,7 @@ app.get("/download/:file", (req, res) => {
   res.download(filePath);
 });
 
-// MIDI generation route (SAFE + PRODUCTION READY)
+// Generate MIDI
 app.post("/generate-midi", (req, res) => {
   try {
     const { bpm = 120, files } = req.body;
@@ -50,7 +50,12 @@ app.post("/generate-midi", (req, res) => {
       track.setTempo(bpm);
 
       files[name].forEach(n => {
-        if (!n.note || n.start == null || n.duration == null || n.velocity == null) {
+        if (
+          !n.note ||
+          n.start == null ||
+          n.duration == null ||
+          n.velocity == null
+        ) {
           return;
         }
 
@@ -64,13 +69,15 @@ app.post("/generate-midi", (req, res) => {
         );
       });
 
-      let writer = new MidiWriter.Writer(track);
+      const writer = new MidiWriter.Writer(track);
 
-      let fileName = `${uniqueId}-${name}.mid`;
-      let filePath = path.join(midiDir, fileName);
+      // Unique filename (prevents overwrite)
+      const fileName = `${uniqueId}-${name}.mid`;
+      const filePath = path.join(midiDir, fileName);
 
       fs.writeFileSync(filePath, writer.buildFile());
 
+      // Return download link
       output[name] = `${BASE_URL}/download/${fileName}`;
     }
 
@@ -79,7 +86,6 @@ app.post("/generate-midi", (req, res) => {
     }
 
     res.json(output);
-
   } catch (err) {
     console.error("MIDI ERROR:", err);
     res.status(500).json({ error: "MIDI generation failed" });

@@ -7,7 +7,8 @@ const app = express();
 app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
-const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
+const BASE_URL =
+  process.env.BASE_URL || `http://localhost:${PORT}`;
 
 // Ensure midis folder exists
 const midiDir = path.join(__dirname, "midis");
@@ -15,41 +16,43 @@ if (!fs.existsSync(midiDir)) {
   fs.mkdirSync(midiDir);
 }
 
-// Serve MIDI files (direct access if needed)
+// Serve MIDI files
 app.use("/midis", express.static(midiDir));
 
-// Force download endpoint
+// Download endpoint
 app.get("/download/:file", (req, res) => {
   const filePath = path.join(midiDir, req.params.file);
 
   if (!fs.existsSync(filePath)) {
-    return res.status(404).send("File not found");
+    return res.status(404).json({ error: "File not found" });
   }
 
   res.download(filePath);
 });
 
-// Generate MIDI
+// Generate MIDI endpoint
 app.post("/generate-midi", (req, res) => {
   try {
     const { bpm = 120, files } = req.body;
 
     if (!files || typeof files !== "object") {
-      return res.status(400).json({ error: "Invalid files object" });
+      return res
+        .status(400)
+        .json({ success: false, error: "Invalid files object" });
     }
 
     const uniqueId = Date.now();
     let output = {};
 
     for (let name in files) {
-      if (!Array.isArray(files[name]) || files[name].length === 0) {
-        continue;
-      }
+      const notes = files[name];
+
+      if (!Array.isArray(notes) || notes.length === 0) continue;
 
       let track = new MidiWriter.Track();
       track.setTempo(bpm);
 
-      files[name].forEach(n => {
+      notes.forEach((n) => {
         if (
           !n.note ||
           n.start == null ||
@@ -71,24 +74,33 @@ app.post("/generate-midi", (req, res) => {
 
       const writer = new MidiWriter.Writer(track);
 
-      // Unique filename (prevents overwrite)
       const fileName = `${uniqueId}-${name}.mid`;
       const filePath = path.join(midiDir, fileName);
 
       fs.writeFileSync(filePath, writer.buildFile());
 
-      // Return download link
       output[name] = `${BASE_URL}/download/${fileName}`;
     }
 
     if (Object.keys(output).length === 0) {
-      return res.status(400).json({ error: "No valid MIDI data generated" });
+      return res.status(400).json({
+        success: false,
+        error: "No valid MIDI data generated"
+      });
     }
 
-    res.json(output);
+    // ✅ FIXED RESPONSE STRUCTURE (CRITICAL)
+    res.json({
+      success: true,
+      files: output
+    });
+
   } catch (err) {
     console.error("MIDI ERROR:", err);
-    res.status(500).json({ error: "MIDI generation failed" });
+    res.status(500).json({
+      success: false,
+      error: "MIDI generation failed"
+    });
   }
 });
 

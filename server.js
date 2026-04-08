@@ -29,68 +29,64 @@ app.get("/download/:file", (req, res) => {
   res.download(filePath);
 });
 
-// Humanize timing
-function humanize(value, amount) {
-  return value + (Math.random() * amount - amount / 2);
-}
-
-// Generate MIDI
+// MIDI generation route (SAFE + PRODUCTION READY)
 app.post("/generate-midi", (req, res) => {
   try {
-    const { bpm = 120, files, swing = 0.1, velocityVar = 10 } = req.body;
+    const { bpm = 120, files } = req.body;
 
-    if (!files) {
-      return res.status(400).json({ error: "Missing files data" });
+    if (!files || typeof files !== "object") {
+      return res.status(400).json({ error: "Invalid files object" });
     }
 
     const uniqueId = Date.now();
     let output = {};
 
     for (let name in files) {
+      if (!Array.isArray(files[name]) || files[name].length === 0) {
+        continue;
+      }
+
       let track = new MidiWriter.Track();
       track.setTempo(bpm);
 
       files[name].forEach(n => {
-        let start = humanize(n.start, swing);
-
-        let velocity = Math.max(
-          30,
-          Math.min(
-            127,
-            n.velocity + Math.floor(Math.random() * velocityVar - velocityVar / 2)
-          )
-        );
+        if (!n.note || n.start == null || n.duration == null || n.velocity == null) {
+          return;
+        }
 
         track.addEvent(
           new MidiWriter.NoteEvent({
             pitch: [n.note],
             duration: "T" + Math.floor(n.duration * 128),
-            startTick: Math.floor(start * 128),
-            velocity: velocity
+            startTick: Math.floor(n.start * 128),
+            velocity: n.velocity
           })
         );
       });
 
       let writer = new MidiWriter.Writer(track);
 
-      // Unique filename (prevents overwrite)
       let fileName = `${uniqueId}-${name}.mid`;
       let filePath = path.join(midiDir, fileName);
 
       fs.writeFileSync(filePath, writer.buildFile());
 
-      // Return download link (FORCES DOWNLOAD)
       output[name] = `${BASE_URL}/download/${fileName}`;
     }
 
+    if (Object.keys(output).length === 0) {
+      return res.status(400).json({ error: "No valid MIDI data generated" });
+    }
+
     res.json(output);
+
   } catch (err) {
-    console.error(err);
+    console.error("MIDI ERROR:", err);
     res.status(500).json({ error: "MIDI generation failed" });
   }
 });
 
-// Health check (Railway uses this)
+// Health check
 app.get("/", (req, res) => {
   res.send("MIDI Backend Running");
 });

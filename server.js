@@ -15,8 +15,19 @@ if (!fs.existsSync(midiDir)) {
   fs.mkdirSync(midiDir);
 }
 
-// Serve MIDI files
+// Serve MIDI files (direct access)
 app.use("/midis", express.static(midiDir));
+
+// Force download endpoint
+app.get("/download/:file", (req, res) => {
+  const filePath = path.join(midiDir, req.params.file);
+
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).send("File not found");
+  }
+
+  res.download(filePath);
+});
 
 // Humanize timing
 function humanize(value, amount) {
@@ -32,6 +43,7 @@ app.post("/generate-midi", (req, res) => {
       return res.status(400).json({ error: "Missing files data" });
     }
 
+    const uniqueId = Date.now();
     let output = {};
 
     for (let name in files) {
@@ -60,12 +72,15 @@ app.post("/generate-midi", (req, res) => {
       });
 
       let writer = new MidiWriter.Writer(track);
-      let fileName = `${name}.mid`;
+
+      // Unique filename (prevents overwrite)
+      let fileName = `${uniqueId}-${name}.mid`;
       let filePath = path.join(midiDir, fileName);
 
       fs.writeFileSync(filePath, writer.buildFile());
 
-      output[name] = `${BASE_URL}/midis/${fileName}`;
+      // Return download link (FORCES DOWNLOAD)
+      output[name] = `${BASE_URL}/download/${fileName}`;
     }
 
     res.json(output);
@@ -75,7 +90,7 @@ app.post("/generate-midi", (req, res) => {
   }
 });
 
-// Health check
+// Health check (Railway uses this)
 app.get("/", (req, res) => {
   res.send("MIDI Backend Running");
 });
